@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="offline-shell-version" content="2026-10-19-offline-v1">
     <title>AI 마이크로비트 색상 분류기</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+    <script src="./vendor/tf-1.3.1.min.js"></script>
+    <script src="./vendor/teachablemachine-image-0.8.5.min.js"></script>
     
     <style>
         :root {
@@ -16,10 +16,10 @@
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: system-ui, 'Malgun Gothic', sans-serif;
             background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
             color: var(--text-main); min-height: 100vh;
-            display: flex; flex-direction: column; align-items: center; padding: 40px 20px;
+            display: flex; flex-direction: column; align-items: center; padding: 24px 20px;
         }
         h1 {
             font-size: 2.5rem; font-weight: 800; margin-bottom: 5px;
@@ -30,11 +30,11 @@
         .container {
             background: var(--card-bg); backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 24px;
-            padding: 40px; width: 100%; max-width: 900px;
+            padding: 28px; width: 100%; max-width: 1000px;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            display: grid; grid-template-columns: 1fr 1fr; gap: 40px;
+            display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px;
         }
-        .control-panel { display: flex; flex-direction: column; gap: 20px; }
+        .control-panel { display: flex; flex-direction: column; gap: 14px; }
         .input-group { display: flex; flex-direction: column; gap: 8px; }
         .input-group label { font-size: 0.9rem; font-weight: 600; color: var(--text-muted); }
         input[type="text"] {
@@ -55,6 +55,17 @@
         .btn-bt { background: linear-gradient(135deg, #10b981 0%, #059669 100%); box-shadow: 0 4px 14px 0 rgba(16,185,129,0.39); }
         .btn-test { background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%); box-shadow: 0 4px 14px 0 rgba(168,85,247,0.39); }
         .btn-disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-reset { background: #475569; }
+        .offline-card { padding: 16px; border: 1px solid #64748b; background: rgba(15,23,42,.6); border-radius: 16px; display: flex; flex-direction: column; gap: 12px; }
+        .offline-card h2 { font-size: 1.05rem; }
+        .btn-save { background: #0e7490; }
+        .btn-offline { background: #6d28d9; }
+        #network-status { max-width: 900px; margin: -16px 0 20px; text-align: center; }
+        .help { color: #cbd5e1; font-size: 0.85rem; line-height: 1.6; overflow-wrap: anywhere; }
+        .class-name { overflow-wrap: anywhere; }
+        .class-prob { flex-shrink: 0; margin-left: 8px; }
+        #cmd-log, #model-status { overflow-wrap: anywhere; }
         .status-box {
             padding: 16px; border-radius: 12px; background: rgba(0, 0, 0, 0.3);
             border: 1px solid rgba(255, 255, 255, 0.05); font-size: 0.95rem; line-height: 1.5;
@@ -89,32 +100,47 @@
 <body>
 
     <h1>AI Color Sorter</h1>
-    <p class="subtitle">개발자 커스텀 통신주소 완벽 복원 + 버그 수정 최종본</p>
+    <p class="subtitle">색상을 배우고, 마이크로비트로 분류해요</p>
+    <p class="help" id="network-status" role="status"></p>
 
     <div class="container">
         <div class="control-panel">
             <div class="input-group">
                 <label for="model-url">Teachable Machine 모델 URL</label>
-                <input type="text" id="model-url" placeholder="https://teachablemachine.withgoogle.com/models/XXXXXXX/">
+                <input type="text" id="model-url" autocomplete="off" spellcheck="false" aria-describedby="model-help" placeholder="https://teachablemachine.withgoogle.com/models/XXXXXXX/">
+                <p class="help" id="model-help">수정 후에는 다시 학습하고 ‘모델 내보내기 → 업로드’를 완료해 주세요. 주소가 달라졌다면 새 주소를 넣어 주세요.</p>
             </div>
 
             <button class="btn-ai" onclick="initModel()" id="btn-init">
-                1. AI 모델 & 카메라 켜기
+                1. 최신 모델로 시작 (온라인)
             </button>
+
+            <p class="help" id="model-status" role="status">온라인 최신 모델 또는 저장한 부스용 모델로 시작해 주세요.</p>
+
+            <section class="offline-card" aria-labelledby="offline-title">
+                <h2 id="offline-title">야외 부스 · 인터넷 없이 사용하기</h2>
+                <button class="btn-save" id="btn-save-offline" onclick="saveOfflineModel()">부스용 최신 모델 저장 (온라인)</button>
+                <button class="btn-offline" id="btn-offline" onclick="startOfflineModel()" disabled>1. 저장한 부스용 모델로 시작</button>
+                <p class="help" id="offline-status" role="status">저장한 모델 확인 중...</p>
+                <p class="help">‘오프라인 준비 완료’를 확인한 뒤, 현장에서도 같은 기기와 브라우저로 열어 주세요. 새로고침해도 저장한 모델은 유지됩니다. 사이트 데이터를 삭제하면 다시 저장해야 합니다.</p>
+            </section>
 
             <button class="btn-bt" onclick="connectBluetooth()" id="btn-bt">
                 2. 마이크로비트 블루투스 연결
             </button>
             
-            <button class="btn-test" onclick="forceTest()">
+            <button class="btn-test" onclick="forceTest()" id="btn-test" disabled>
                 3. 강제 테스트 (RED 신호 쏘기)
             </button>
+
+            <button class="btn-reset" onclick="resetApp()">처음부터 다시 시작</button>
+            <p class="help">새로고침하면 주소·카메라·연결 상태만 초기화됩니다. 클래스 이름은 대소문자와 공백까지 마이크로비트의 명령어와 같아야 해요.</p>
 
             <div class="status-box" id="status-box">
                 <div style="margin-bottom: 8px;"><strong>Bluetooth 상태</strong></div>
                 <div id="bt-log"><span class="indicator"></span>대기 중...</div>
                 <div style="margin-top: 15px; margin-bottom: 8px;"><strong>동작 제어 상태</strong></div>
-                <div id="cmd-log" style="color: var(--text-muted); font-size: 0.9rem; background:rgba(0,0,0,0.5); padding:8px; border-radius:6px;">초기화 완료 (명령 대기중)</div>
+                <div id="cmd-log" role="status" style="color: var(--text-muted); font-size: 0.9rem; background:rgba(0,0,0,0.5); padding:8px; border-radius:6px;">초기화 완료 (명령 대기중)</div>
             </div>
         </div>
 
@@ -126,190 +152,570 @@
         </div>
     </div>
 
-    <script>
-        const UART_SERVICE_UUID    = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-        const UART_RX_CHAR_UUID    = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // 기존 개발자 설정 그대로 0003
+<script>
+// Only an explicitly saved booth model persists. Online loading never reads this store.
+(function () {
+    const scopeURL = new URL("./", location.href);
+    const databaseName = "ai-color-sorter-offline:" + scopeURL.pathname;
+    const STORE = "models";
+    const SHELL_VERSION = "2026-10-19-offline-v1";
+    let registrationPromise;
+    function openDatabase() {
+        return new Promise((resolve, reject) => {
+            if (!window.indexedDB) { reject(new Error("이 브라우저에서 모델을 저장할 수 없습니다. 일반 Chrome 또는 Edge 창을 사용해 주세요.")); return; }
+            const request = indexedDB.open(databaseName, 1);
+            request.onupgradeneeded = () => request.result.createObjectStore(STORE);
+            request.onsuccess = () => {
+                const db = request.result;
+                db.onversionchange = () => db.close();
+                resolve(db);
+            };
+            request.onerror = () => reject(request.error || new Error("모델 저장 공간을 열지 못했습니다."));
+            request.onblocked = () => reject(new Error("다른 색상 분류기 창을 닫고 다시 시도해 주세요."));
+        });
+    }
+    async function read() {
+        const db = await openDatabase();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE, "readonly");
+            const request = tx.objectStore(STORE).get("booth-model");
+            tx.oncomplete = () => { db.close(); resolve(request.result || null); };
+            tx.onerror = tx.onabort = () => { db.close(); reject(tx.error || new Error("저장한 모델을 읽지 못했습니다.")); };
+        });
+    }
+    async function write(record, signal) {
+        const db = await openDatabase();
+        return new Promise((resolve, reject) => {
+            if (signal && signal.aborted) { db.close(); reject(new DOMException("취소됨", "AbortError")); return; }
+            const tx = db.transaction(STORE, "readwrite");
+            const abort = () => { try { tx.abort(); } catch (_) {} };
+            const clean = () => { if (signal) signal.removeEventListener("abort", abort); db.close(); };
+            if (signal) signal.addEventListener("abort", abort, { once: true });
+            tx.oncomplete = () => { clean(); resolve(); };
+            tx.onerror = tx.onabort = () => {
+                const error = signal && signal.aborted ? new DOMException("취소됨", "AbortError") : tx.error;
+                clean();
+                reject(error || new Error("모델을 저장하지 못했습니다. 저장 공간을 확인해 주세요."));
+            };
+            // One transaction replaces metadata and every weight together. Failure keeps the old record.
+            tx.objectStore(STORE).put(record, "booth-model");
+        });
+    }
+    function registerShell() {
+        if (!navigator.serviceWorker || !window.isSecureContext) return Promise.reject(new Error("오프라인 준비는 HTTPS 사이트를 Chrome 또는 Edge에서 열어 진행해 주세요."));
+        if (!registrationPromise) {
+            registrationPromise = navigator.serviceWorker.register(new URL("sw.js", scopeURL), { scope: scopeURL.href, updateViaCache: "none" })
+                .catch((error) => { registrationPromise = null; throw error; });
+        }
+        return registrationPromise;
+    }
+    async function ensureShellReady() {
+        const registration = await registerShell();
+        // Bound installation/handshake waits so a blocked download cannot freeze the save UI.
+        const worker = await new Promise((resolve, reject) => {
+            if (registration.active) { resolve(registration.active); return; }
+            const candidate = registration.installing || registration.waiting;
+            if (!candidate) { reject(new Error("오프라인 앱을 준비하지 못했습니다. 인터넷 연결을 확인해 주세요.")); return; }
+            const finish = () => {
+                if (candidate.state === "activated") { cleanup(); resolve(candidate); }
+                else if (candidate.state === "redundant") { cleanup(); reject(new Error("앱 저장에 실패했습니다. 인터넷에 연결한 뒤 새로고침해 주세요.")); }
+            };
+            const timer = setTimeout(() => { cleanup(); reject(new Error("앱 저장 시간이 초과됐습니다. 인터넷에 연결한 뒤 다시 시도해 주세요.")); }, 20000);
+            const cleanup = () => { clearTimeout(timer); candidate.removeEventListener("statechange", finish); };
+            candidate.addEventListener("statechange", finish);
+            finish();
+        });
+        const askWorker = (type) => new Promise((resolve, reject) => {
+            const channel = new MessageChannel();
+            const timer = setTimeout(() => { channel.port1.close(); reject(new Error("오프라인 앱 상태를 확인하지 못했습니다. 새로고침 후 다시 시도해 주세요.")); }, type === "REPAIR_SHELL" ? 25000 : 10000);
+            channel.port1.onmessage = (event) => {
+                clearTimeout(timer);
+                channel.port1.close();
+                resolve(event.data);
+            };
+            worker.postMessage({ type }, [channel.port2]);
+        });
+        let status = await askWorker("CHECK_READY");
+        if (status && status.version !== SHELL_VERSION) throw new Error("앱 업데이트가 준비 중입니다. 이 사이트의 창을 모두 닫았다가 다시 열어 주세요.");
+        if (status && !status.ready && navigator.onLine !== false) status = await askWorker("REPAIR_SHELL");
+        if (!status || status.type !== "OFFLINE_READY" || !status.ready || status.version !== SHELL_VERSION) {
+            throw new Error("오프라인 앱 파일이 모두 저장되지 않았습니다. 인터넷에 연결한 뒤 새로고침해 주세요.");
+        }
+        return status;
+    }
+    window.OfflineStore = { read, write, registerShell, ensureShellReady };
+})();
 
-        let model, webcam, labelContainer, maxClasses;
-        let rxCharacteristic;
-        let isCoolingDown = false;
+</script>
+<script>
+// Keep the micro:bit UART receive characteristic (0003).
+const UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const UART_RX_CHAR_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+const COOLDOWN_MS = 3500;
+const $ = (id) => document.getElementById(id);
+let activeSession = null;
+let loadingModel = false;
+let bluetoothDevice = null;
+let rxCharacteristic = null;
+let connecting = false;
+let connectionVersion = 0;
+let sending = false;
+let coolingDown = false;
+let cooldownTimer = null;
+let lastSentSignal = null;
+let offlineSave = null;
+let offlineInfoVersion = 0;
+let savedModelAvailable = false;
+const offlineStore = () => window.OfflineStore;
 
-        // ── 1. AI 모델 & 카메라 초기화 ──────────────────────────────────
-        async function initModel() {
-            const URL = document.getElementById("model-url").value.trim();
-            if (!URL) { alert("Teachable Machine 모델 URL을 입력해주세요!"); return; }
-
-            const baseUrl  = URL.endsWith("/") ? URL : URL + "/";
-            const btnInit  = document.getElementById("btn-init");
-            btnInit.innerHTML = "모델 불러오는 중...";
-            btnInit.classList.add("btn-disabled");
-
+function setCommand(message) { $("cmd-log").textContent = message; }
+function setBluetooth(message) {
+    const dot = document.createElement("span");
+    dot.className = "indicator";
+    $("bt-log").replaceChildren(dot, document.createTextNode(message));
+}
+function updateButtons() {
+    $("btn-init").disabled = loadingModel || !!offlineSave;
+    $("model-url").disabled = loadingModel || !!offlineSave;
+    $("btn-save-offline").disabled = loadingModel || !!offlineSave;
+    $("btn-offline").disabled = loadingModel || !!offlineSave || !savedModelAvailable;
+    $("btn-bt").disabled = connecting || !!rxCharacteristic;
+    $("btn-test").disabled = !rxCharacteristic || sending || coolingDown;
+    $("btn-bt").textContent = "2. 마이크로비트 블루투스 연결";
+    if (rxCharacteristic) $("btn-bt").textContent = "마이크로비트 연결됨 ✓";
+    else if (connecting) $("btn-bt").textContent = "마이크로비트 연결 중...";
+}
+function clearCommandState() {
+    clearTimeout(cooldownTimer);
+    cooldownTimer = null;
+    sending = false;
+    coolingDown = false;
+    lastSentSignal = null;
+    $("status-box").classList.remove("working");
+}
+function stopCamera(camera) {
+    // Webcam.stop() in TM 0.8.5 assumes setup succeeded. Handle partial setup too.
+    const video = camera && camera.webcam;
+    if (video && video.srcObject) {
+        video.srcObject.getTracks().forEach((track) => track.stop());
+        video.srcObject = null;
+    }
+    if (video && typeof video.pause === "function") video.pause();
+}
+function releaseModel(session) {
+    const loaded = session.model;
+    session.model = null;
+    // TM's wrapper dispose() targets a training-only model; dispose the loaded model.
+    if (loaded && loaded.model) loaded.model.dispose();
+}
+function closeSession(session) {
+    if (!session) return;
+    session.cancelled = true;
+    session.controller.abort();
+    cancelAnimationFrame(session.frame);
+    stopCamera(session.webcam);
+    // Do not dispose tensors while predict() is still reading them.
+    if (session.pendingPrediction) {
+        session.pendingPrediction.then(() => releaseModel(session), () => releaseModel(session));
+    } else releaseModel(session);
+}
+function clearCameraView() {
+    const placeholder = document.createElement("div");
+    placeholder.className = "webcam-placeholder";
+    placeholder.textContent = "카메라 화면 준비 중...";
+    $("webcam-container").replaceChildren(placeholder);
+    $("webcam-container").style.border = "";
+    $("label-container").replaceChildren();
+}
+function stopModel() {
+    const previous = activeSession;
+    activeSession = null;
+    closeSession(previous);
+    loadingModel = false;
+    clearCameraView();
+    $("btn-init").textContent = "1. 최신 모델로 시작 (온라인)";
+    updateButtons();
+}
+function parseModelURL(value) {
+    let url;
+    try { url = new URL(value.trim()); } catch (_) { throw new Error("모델 공유 주소를 입력해 주세요."); }
+    if (url.protocol !== "https:" || url.hostname !== "teachablemachine.withgoogle.com" ||
+        url.port || url.username || url.password || !/^\/models\/[A-Za-z0-9_-]+\/(?:model\.json)?$/.test(url.pathname.endsWith("/") || url.pathname.endsWith("model.json") ? url.pathname : url.pathname + "/")) {
+        throw new Error("Teachable Machine의 이미지 모델 공유 주소를 넣어 주세요. (https://teachablemachine.withgoogle.com/models/…/)");
+    }
+    url.pathname = url.pathname.replace(/model\.json$/, "").replace(/\/?$/, "/");
+    url.search = "";
+    url.hash = "";
+    return url;
+}
+function validateLabels(labels, count) {
+    if (!Array.isArray(labels) || labels.length !== count || !count) {
+        throw new Error("모델과 클래스 정보가 맞지 않습니다. 모델을 다시 업로드해 주세요.");
+    }
+    for (const label of labels) {
+        if (typeof label !== "string" || !label.trim() || /[\x00-\x1f\x7f]/.test(label)) {
+            throw new Error("클래스 이름은 빈칸이나 줄바꿈 없이 입력해 주세요.");
+        }
+        if (new TextEncoder().encode(label + "\n").length > 20) {
+            throw new Error("클래스 이름이 너무 깁니다. RED, GREEN, BLUE, NOT처럼 짧은 명령어를 사용해 주세요.");
+        }
+    }
+    if (new Set(labels).size !== labels.length) throw new Error("클래스 이름이 서로 같습니다. 각각 다른 이름을 사용해 주세요.");
+}
+function renderLabels(labels) {
+    $("label-container").replaceChildren();
+    return labels.map((label) => {
+        const row = document.createElement("div");
+        row.className = "class-row";
+        const info = document.createElement("div");
+        info.className = "class-info";
+        const name = document.createElement("span");
+        name.className = "class-name";
+        name.style.whiteSpace = "pre-wrap";
+        name.textContent = label;
+        const probability = document.createElement("span");
+        probability.className = "class-prob";
+        probability.textContent = "0.0%";
+        info.append(name, probability);
+        const background = document.createElement("div");
+        background.className = "progress-bar-bg";
+        const bar = document.createElement("div");
+        bar.className = "progress-bar-fill";
+        background.appendChild(bar);
+        row.append(info, background);
+        $("label-container").appendChild(row);
+        return { probability, bar };
+    });
+}
+async function loadLatestModel(baseURL, session) {
+    const token = Date.now() + "-" + Math.random().toString(36).slice(2);
+    const modelURL = new URL("model.json", baseURL);
+    const metadataURL = new URL("metadata.json", baseURL);
+    modelURL.searchParams.set("refresh", token);
+    metadataURL.searchParams.set("refresh", token);
+    const requestInit = { cache: "no-store", signal: session.controller.signal };
+    const metadataResponse = await fetch(metadataURL.href, requestInit);
+    if (!metadataResponse.ok) throw new Error("클래스 정보를 불러오지 못했습니다. 주소와 업로드 완료 여부를 확인해 주세요.");
+    const metadata = await metadataResponse.json();
+    if (session.cancelled) throw new DOMException("취소됨", "AbortError");
+    validateLabels(metadata && metadata.labels, metadata && metadata.labels && metadata.labels.length);
+    // The pinned TF loader propagates query and no-store to every weight shard.
+    session.model = await tmImage.load(tf.io.http(modelURL.href, { requestInit }), metadata);
+    if (session.cancelled) { releaseModel(session); throw new DOMException("취소됨", "AbortError"); }
+    validateLabels(session.model.getClassLabels(), session.model.getTotalClasses());
+    session.metadata = metadata;
+}
+function validateSavedModel(record) {
+    if (!record) throw new Error("저장한 부스용 모델이 없습니다. 인터넷이 있을 때 먼저 저장해 주세요.");
+    if (record.schemaVersion !== 1 || !record.artifacts || !record.artifacts.modelTopology ||
+        !Array.isArray(record.artifacts.weightSpecs) || !record.artifacts.weightData ||
+        Object.prototype.toString.call(record.artifacts.weightData) !== "[object ArrayBuffer]" ||
+        !record.metadata || !Number.isFinite(Date.parse(record.savedAt))) {
+        throw new Error("저장한 모델을 읽을 수 없습니다. 인터넷에 연결한 뒤 부스용 모델을 다시 저장해 주세요.");
+    }
+    validateLabels(record.metadata.labels, record.metadata.labels && record.metadata.labels.length);
+}
+function describeSavedModel(record) {
+    return "저장: " + new Date(record.savedAt).toLocaleString("ko-KR") + " · 명령: " +
+        record.metadata.labels.map((label) => JSON.stringify(label)).join(", ");
+}
+function updateNetworkStatus() {
+    $("network-status").textContent = navigator.onLine === false
+        ? "인터넷 연결 없음 · 저장한 부스용 모델을 사용하세요."
+        : "온라인 모델은 인터넷이 필요하고, 부스용 모델은 저장된 내용을 사용합니다.";
+}
+async function refreshOfflineStatus() {
+    const version = ++offlineInfoVersion;
+    try {
+        const record = await offlineStore().read();
+        if (version !== offlineInfoVersion || offlineSave) return;
+        savedModelAvailable = !!record;
+        if (!record) {
+            $("offline-status").textContent = "아직 저장한 모델이 없습니다. 인터넷이 있을 때 부스용 모델을 저장해 주세요.";
+        } else {
+            validateSavedModel(record);
+            $("offline-status").textContent = describeSavedModel(record) + " · 앱 저장 상태 확인 중...";
             try {
-                model = await tmImage.load(baseUrl + "model.json", baseUrl + "metadata.json");
-                maxClasses = model.getTotalClasses();
-
-                webcam = new tmImage.Webcam(350, 350, true); // flip=true
-                await webcam.setup();
-                await webcam.play();
-                window.requestAnimationFrame(loop);
-
-                const container = document.getElementById("webcam-container");
-                document.getElementById("webcam-placeholder").style.display = "none";
-                container.style.border = "none";
-                container.appendChild(webcam.canvas);
-
-                labelContainer = document.getElementById("label-container");
-                labelContainer.innerHTML = "";
-                for (let i = 0; i < maxClasses; i++) {
-                    const row = document.createElement("div");
-                    row.className = "class-row";
-                    row.innerHTML = `
-                        <div class="class-info">
-                            <span class="class-name">Class ${i}</span>
-                            <span class="class-prob">0.0%</span>
-                        </div>
-                        <div class="progress-bar-bg">
-                            <div class="progress-bar-fill"></div>
-                        </div>`;
-                    labelContainer.appendChild(row);
-                }
-
-                btnInit.innerHTML = "AI 인식 작동 중 ✓";
-            } catch (e) {
-                console.error(e);
-                alert("모델 로드 실패! 주소가 정확한지 확인해주세요.");
-                btnInit.innerHTML = "1. AI 모델 & 카메라 켜기";
-                btnInit.classList.remove("btn-disabled");
-            }
-        }
-
-        async function loop() {
-            webcam.update();
-            await predict();
-            window.requestAnimationFrame(loop);
-        }
-
-        // ── 2. 실시간 예측 ──────────────────────────────────────────────
-        async function predict() {
-            const prediction = await model.predict(webcam.canvas);
-            let highestProb = 0, bestClass = "", bestIndex = -1;
-
-            for (let i = 0; i < maxClasses; i++) {
-                if (prediction[i].probability > highestProb) {
-                    highestProb = prediction[i].probability;
-                    bestClass   = prediction[i].className;
-                    bestIndex   = i;
-                }
-            }
-
-            for (let i = 0; i < maxClasses; i++) {
-                const prob    = prediction[i].probability;
-                const row     = labelContainer.childNodes[i];
-                const bar     = row.querySelector(".progress-bar-fill"); // ✅ 수정된 핵심 부분
-                row.querySelector(".class-name").innerText = prediction[i].className;
-                row.querySelector(".class-prob").innerText = (prob * 100).toFixed(1) + "%";
-                bar.style.width = (prob * 100).toFixed(1) + "%";
-
-                if (i === bestIndex && highestProb > 0.70) {
-                    bar.classList.add("highlight");
-                } else {
-                    bar.classList.remove("highlight");
-                }
-            }
-
-            if (highestProb > 0.70 && !isCoolingDown) {
-                sendSignal(bestClass);
-            }
-        }
-
-        // ── 3. 블루투스 연결 ────────────────────────────────────────────
-        async function connectBluetooth() {
-            const statusBox = document.getElementById("status-box");
-            const btLog     = document.getElementById("bt-log");
-            const cmdLog    = document.getElementById("cmd-log");
-
-            try {
-                btLog.innerHTML = `<span class="indicator"></span>마이크로비트 찾는 중...`;
-
-                const device = await navigator.bluetooth.requestDevice({
-                    filters: [{ namePrefix: "BBC micro:bit" }],
-                    optionalServices: [UART_SERVICE_UUID]
-                });
-
-                device.addEventListener('gattserverdisconnected', () => {
-                    statusBox.classList.remove("connected", "working");
-                    btLog.innerHTML = `<span class="indicator"></span>블루투스 연결 끊어짐`;
-                    rxCharacteristic = null;
-                });
-
-                const server  = await device.gatt.connect();
-                const service = await server.getPrimaryService(UART_SERVICE_UUID);
-                rxCharacteristic = await service.getCharacteristic(UART_RX_CHAR_UUID);
-
-                statusBox.classList.add("connected");
-                btLog.innerHTML  = `<span class="indicator"></span>마이크로비트 연결 완료!`;
-                document.getElementById("btn-bt").innerHTML = "마이크로비트 연결됨 ✓";
-                document.getElementById("btn-bt").classList.add("btn-disabled");
-                cmdLog.innerHTML = `<span style="color:#10b981;font-weight:bold;">블루투스 연결됨! 신호 전송 준비 완료</span>`;
-
+                await offlineStore().ensureShellReady();
+                if (version !== offlineInfoVersion || offlineSave) return;
+                $("offline-status").textContent = "오프라인 준비 완료 · " + describeSavedModel(record);
             } catch (error) {
-                console.error(error);
-                btLog.innerHTML = `<span class="indicator"></span>연결 취소 또는 실패`;
+                if (version !== offlineInfoVersion || offlineSave) return;
+                $("offline-status").textContent = describeSavedModel(record) + " · " + error.message;
             }
         }
-
-        // ── 4. 강제 테스트 ──────────────────────────────────────────────
-        function forceTest() {
-            sendSignal("RED");
+    } catch (error) {
+        if (version !== offlineInfoVersion || offlineSave) return;
+        savedModelAvailable = false;
+        $("offline-status").textContent = error.message || "저장한 모델을 확인하지 못했습니다.";
+    } finally {
+        if (version === offlineInfoVersion) updateButtons();
+    }
+}
+async function saveOfflineModel() {
+    if (offlineSave || loadingModel) return;
+    if (navigator.onLine === false) { $("offline-status").textContent = "새 모델을 저장하려면 인터넷에 연결해 주세요. 기존에 저장한 모델은 그대로 사용할 수 있습니다."; return; }
+    let baseURL;
+    try { baseURL = parseModelURL($("model-url").value); }
+    catch (error) { $("offline-status").textContent = error.message; return; }
+    if (typeof tf === "undefined" || typeof tmImage === "undefined") {
+        $("offline-status").textContent = "AI 도구를 불러오지 못했습니다. 인터넷에 연결한 뒤 새로고침해 주세요.";
+        return;
+    }
+    const task = { controller: new AbortController(), cancelled: false, model: null };
+    offlineSave = task;
+    ++offlineInfoVersion;
+    updateButtons();
+    $("offline-status").textContent = "앱과 최신 모델을 저장하고 있어요. 완료될 때까지 이 화면을 열어 두세요.";
+    try {
+        await offlineStore().ensureShellReady();
+        if (task.cancelled) return;
+        await loadLatestModel(baseURL, task);
+        if (task.cancelled) return;
+        let artifacts;
+        await task.model.model.save(tf.io.withSaveHandler(async (value) => {
+            artifacts = value;
+            return { modelArtifactsInfo: { dateSaved: new Date(), modelTopologyType: "JSON" } };
+        }));
+        if (task.cancelled) return;
+        const record = { schemaVersion: 1, savedAt: new Date().toISOString(), sourceURL: baseURL.href, metadata: task.metadata, artifacts };
+        validateSavedModel(record);
+        await offlineStore().write(record, task.controller.signal);
+        if (task.cancelled) return;
+        savedModelAvailable = true;
+        $("offline-status").textContent = "오프라인 준비 완료 · " + describeSavedModel(record);
+        // A best-effort request reduces automatic eviction; denial does not invalidate a completed save.
+        if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    } catch (error) {
+        if (task.cancelled) return;
+        console.error(error);
+        try {
+            const retained = await offlineStore().read();
+            if (task.cancelled) return;
+            validateSavedModel(retained);
+            savedModelAvailable = true;
+        } catch (_) { if (!task.cancelled) savedModelAvailable = false; }
+        if (task.cancelled) return;
+        $("offline-status").textContent = "저장 실패: " + (error.message || "인터넷 연결과 저장 공간을 확인해 주세요.") + " 기존에 저장한 모델은 바꾸지 않았습니다.";
+    } finally {
+        releaseModel(task);
+        if (offlineSave === task) { offlineSave = null; updateButtons(); }
+    }
+}
+async function startOfflineModel() { return initModel("offline"); }
+async function initModel(mode = "online") {
+    if (loadingModel || offlineSave) return;
+    const offline = mode === "offline";
+    if (!offline && navigator.onLine === false) {
+        $("model-status").textContent = "인터넷이 없습니다. ‘저장한 부스용 모델로 시작’을 눌러 주세요.";
+        return;
+    }
+    let baseURL;
+    try { if (!offline) baseURL = parseModelURL($("model-url").value); }
+    catch (error) { $("model-status").textContent = error.message; return; }
+    stopModel();
+    if (typeof tmImage === "undefined" || typeof tf === "undefined") {
+        $("model-status").textContent = "AI 도구를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 새로고침해 주세요.";
+        return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        $("model-status").textContent = "이 브라우저에서는 카메라를 사용할 수 없습니다. HTTPS 주소를 Chrome 또는 Edge에서 열어 주세요.";
+        return;
+    }
+    const session = { controller: new AbortController(), model: null, webcam: null, pendingPrediction: null, frame: null, cancelled: false };
+    activeSession = session;
+    loadingModel = true;
+    updateButtons();
+    $("btn-init").textContent = offline ? "저장한 모델 불러오는 중..." : "최신 모델 불러오는 중...";
+    $("model-status").textContent = offline ? "이 기기에 저장한 부스용 모델을 불러오고 있어요." : "클래스 이름과 학습 데이터를 새로 불러오고 있어요.";
+    let stage = "model";
+    try {
+        if (offline) {
+            session.savedRecord = await offlineStore().read();
+            if (session.cancelled) return;
+            validateSavedModel(session.savedRecord);
+            session.model = await tmImage.load(tf.io.fromMemory(session.savedRecord.artifacts), session.savedRecord.metadata);
+        } else await loadLatestModel(baseURL, session);
+        if (session.cancelled) { releaseModel(session); return; }
+        const labels = session.model.getClassLabels();
+        validateLabels(labels, session.model.getTotalClasses());
+        stage = "camera";
+        session.webcam = new tmImage.Webcam(350, 350, true);
+        $("model-status").textContent = "모델 준비 완료. 카메라 사용을 허용해 주세요.";
+        await session.webcam.setup();
+        if (session.cancelled) { stopCamera(session.webcam); return; }
+        await session.webcam.play();
+        if (session.cancelled) { stopCamera(session.webcam); return; }
+        session.rows = renderLabels(labels);
+        $("webcam-container").replaceChildren(session.webcam.canvas);
+        $("webcam-container").style.border = "none";
+        $("model-status").textContent = offline ? "부스용 모델 작동 중 · " + describeSavedModel(session.savedRecord)
+            : "온라인 최신 모델 작동 중 · 전송할 명령: " + labels.map((label) => JSON.stringify(label)).join(", ");
+        $("btn-init").textContent = "1. 최신 모델로 시작 (온라인)";
+        session.frame = requestAnimationFrame(() => loop(session));
+    } catch (error) {
+        if (session.cancelled) return;
+        console.error(error);
+        stopModel();
+        $("model-status").textContent = stage === "camera"
+            ? "카메라를 켜지 못했습니다. 카메라 사용 권한과 다른 앱에서 사용 중인지 확인한 뒤 다시 눌러 주세요."
+            : "모델 불러오기 실패: " + (error.message || "인터넷 연결과 이미지 모델 주소를 확인해 주세요.");
+    } finally {
+        if (activeSession === session) { loadingModel = false; updateButtons(); }
+    }
+}
+async function loop(session) {
+    if (activeSession !== session || session.cancelled) return;
+    try {
+        session.webcam.update();
+        session.pendingPrediction = session.model.predict(session.webcam.canvas);
+        const predictions = await session.pendingPrediction;
+        session.pendingPrediction = null;
+        if (activeSession !== session || session.cancelled) return;
+        let bestIndex = -1;
+        let highest = 0;
+        predictions.forEach((prediction, index) => {
+            if (prediction.probability > highest) { highest = prediction.probability; bestIndex = index; }
+        });
+        predictions.forEach((prediction, index) => {
+            const percent = (prediction.probability * 100).toFixed(1) + "%";
+            session.rows[index].probability.textContent = percent;
+            session.rows[index].bar.style.width = percent;
+            session.rows[index].bar.classList.toggle("highlight", index === bestIndex && highest > 0.70);
+        });
+        if (highest > 0.70 && rxCharacteristic) await sendSignal(predictions[bestIndex].className);
+    } catch (error) {
+        session.pendingPrediction = null;
+        if (activeSession !== session || session.cancelled) return;
+        console.error(error);
+        stopModel();
+        $("model-status").textContent = "AI 인식이 중단되었습니다. 모델과 카메라 켜기 버튼을 다시 눌러 주세요.";
+    } finally {
+        if (activeSession === session && !session.cancelled) session.frame = requestAnimationFrame(() => loop(session));
+    }
+}
+function disconnectBluetooth(message = "대기 중...") {
+    ++connectionVersion;
+    const previous = bluetoothDevice;
+    bluetoothDevice = null;
+    rxCharacteristic = null;
+    connecting = false;
+    clearCommandState();
+    if (previous && previous.gatt && previous.gatt.connected) previous.gatt.disconnect();
+    $("status-box").classList.remove("connected");
+    setBluetooth(message);
+    updateButtons();
+}
+function getWriter(characteristic) {
+    const properties = characteristic.properties;
+    if (properties.writeWithoutResponse && typeof characteristic.writeValueWithoutResponse === "function") return (data) => characteristic.writeValueWithoutResponse(data);
+    if (properties.write && typeof characteristic.writeValueWithResponse === "function") return (data) => characteristic.writeValueWithResponse(data);
+    if ((properties.write || properties.writeWithoutResponse) && typeof characteristic.writeValue === "function") return (data) => characteristic.writeValue(data);
+    throw new Error("마이크로비트의 UART 수신 기능에 쓸 수 없습니다.");
+}
+async function connectBluetooth() {
+    if (connecting || rxCharacteristic) return;
+    if (!navigator.bluetooth || !navigator.bluetooth.requestDevice) {
+        setBluetooth("이 브라우저는 블루투스를 지원하지 않습니다. PC의 Chrome 또는 Edge로 열어 주세요.");
+        return;
+    }
+    const version = ++connectionVersion;
+    connecting = true;
+    clearCommandState();
+    updateButtons();
+    setBluetooth("마이크로비트 찾는 중...");
+    let selectedDevice;
+    try {
+        selectedDevice = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: "BBC micro:bit" }], optionalServices: [UART_SERVICE_UUID] });
+        if (version !== connectionVersion) return;
+        bluetoothDevice = selectedDevice;
+        selectedDevice.addEventListener("gattserverdisconnected", () => {
+            if (bluetoothDevice !== selectedDevice) return;
+            disconnectBluetooth("블루투스 연결이 끊어졌습니다. 2번 버튼으로 다시 연결해 주세요.");
+            setCommand("연결이 끊어져 신호 전송을 멈췄습니다.");
+        });
+        const server = await selectedDevice.gatt.connect();
+        if (version !== connectionVersion) { if (selectedDevice.gatt.connected) selectedDevice.gatt.disconnect(); return; }
+        const service = await server.getPrimaryService(UART_SERVICE_UUID);
+        const characteristic = await service.getCharacteristic(UART_RX_CHAR_UUID);
+        if (version !== connectionVersion) return;
+        getWriter(characteristic);
+        rxCharacteristic = characteristic;
+        $("status-box").classList.add("connected");
+        setBluetooth("마이크로비트 연결 완료!");
+        setCommand("신호 전송 준비 완료");
+    } catch (error) {
+        if (version !== connectionVersion) return;
+        console.error(error);
+        disconnectBluetooth(error.name === "NotFoundError" ? "연결을 취소했습니다. 다시 연결할 수 있어요." : "연결 실패: 마이크로비트의 블루투스 UART 프로그램과 전원을 확인해 주세요.");
+    } finally {
+        if (version === connectionVersion) { connecting = false; updateButtons(); }
+    }
+}
+async function forceTest() { return sendSignal("RED"); }
+async function sendSignal(signalName) {
+    if (!rxCharacteristic) { setCommand("2번 버튼으로 마이크로비트를 먼저 연결해 주세요."); return; }
+    if (sending || coolingDown || (signalName === "NOT" && lastSentSignal === "NOT")) return;
+    const data = new TextEncoder().encode(signalName + "\n");
+    if (typeof signalName !== "string" || !signalName.trim() || /[\x00-\x1f\x7f]/.test(signalName) || data.length > 20) {
+        setCommand("전송할 클래스 이름을 확인해 주세요. 줄바꿈 없이 짧은 명령어를 사용해 주세요.");
+        return;
+    }
+    const version = connectionVersion;
+    const characteristic = rxCharacteristic;
+    sending = true; // Lock before the first asynchronous write.
+    updateButtons();
+    try {
+        // Pick one supported method. Retrying a failed write can send a motor command twice.
+        await getWriter(characteristic)(data);
+        if (version !== connectionVersion || characteristic !== rxCharacteristic) return;
+        lastSentSignal = signalName;
+        if (signalName === "NOT") {
+            setCommand("대기 상태 (NOT 전송됨)");
+        } else {
+            coolingDown = true;
+            $("status-box").classList.add("working");
+            setCommand(signalName + " 전송 완료 → 3.5초 동안 다음 신호를 기다립니다.");
+            cooldownTimer = setTimeout(() => {
+                if (version !== connectionVersion) return;
+                cooldownTimer = null;
+                coolingDown = false;
+                $("status-box").classList.remove("working");
+                setCommand("대기 중... (새로운 색상 인식 대기)");
+                updateButtons();
+            }, COOLDOWN_MS);
         }
+    } catch (error) {
+        if (version !== connectionVersion) return;
+        console.error("전송 오류:", error);
+        disconnectBluetooth("전송 중 연결에 문제가 생겼습니다. 2번 버튼으로 다시 연결해 주세요.");
+        setCommand("신호 전송 실패. 마이크로비트 전원과 연결을 확인해 주세요.");
+    } finally {
+        if (version === connectionVersion) { sending = false; updateButtons(); }
+    }
+}
+function resetApp() {
+    if (offlineSave) {
+        offlineSave.cancelled = true;
+        offlineSave.controller.abort();
+        offlineSave = null;
+    }
+    stopModel();
+    disconnectBluetooth();
+    $("model-url").value = "";
+    $("model-status").textContent = "온라인 최신 모델 또는 저장한 부스용 모델로 시작해 주세요.";
+    setCommand("초기화 완료 (명령 대기중)");
+    updateNetworkStatus();
+    void refreshOfflineStatus();
+}
+// Explicitly clear restored form state and release devices on refresh/back navigation.
+window.addEventListener("pagehide", resetApp);
+window.addEventListener("pageshow", resetApp);
+window.addEventListener("online", updateNetworkStatus);
+window.addEventListener("offline", updateNetworkStatus);
+resetApp();
+offlineStore().registerShell().catch(() => {});
 
-        // ── 5. 마이크로비트로 신호 전송 ─────────────────────────────────
-        async function sendSignal(signalName) {
-            const cmdLog = document.getElementById("cmd-log");
-
-            if (!rxCharacteristic) {
-                cmdLog.innerHTML = `<span style="color:#ef4444;font-weight:bold;">⚠️ 2번 [마이크로비트 연결] 버튼을 먼저 눌러주세요!</span>`;
-                return;
-            }
-
-            if (signalName === "NOT" && window.lastSentSignal === "NOT") return;
-
-            try {
-                const data = new TextEncoder().encode(signalName + "\n");
-
-                // 크롬 버전 무관하게 작동하는 3중 전송 시도
-                try {
-                    await rxCharacteristic.writeValueWithoutResponse(data);
-                } catch (e1) {
-                    try {
-                        await rxCharacteristic.writeValueWithResponse(data);
-                    } catch (e2) {
-                        await rxCharacteristic.writeValue(data);
-                    }
-                }
-
-                window.lastSentSignal = signalName;
-                const statusBox = document.getElementById("status-box");
-
-                if (signalName !== "NOT") {
-                    isCoolingDown = true;
-                    statusBox.classList.add("working");
-                    cmdLog.innerHTML = `<span style="color:#10b981;font-weight:bold;">${signalName}</span> 전송 완료 ➔ 모터 작동 중...`;
-
-                    setTimeout(() => {
-                        isCoolingDown = false;
-                        statusBox.classList.remove("working");
-                        cmdLog.innerHTML = `대기 중... (새로운 색상 인식 대기)`;
-                    }, 3500);
-                } else {
-                    cmdLog.innerHTML = `대기 상태 (<span style="color:#94a3b8;">NOT</span> 전송됨)`;
-                }
-
-            } catch (error) {
-                console.error("전송 에러:", error);
-                cmdLog.innerHTML = `<span style="color:#ef4444;font-weight:bold;">❌ 전송 에러: ${error.message}</span>`;
-            }
-        }
-    </script>
+</script>
 </body>
 </html>
